@@ -3,6 +3,10 @@ use solana_blog_client::{BlogInfo, PostInfo, BlogClient, CreatePostRequest};
 #[cfg(target_arch = "wasm32")]
 use serde::{Deserialize, Serialize};
 
+// Include Arweave service
+pub mod arweave_service;
+pub use arweave_service::{ArweaveService, PostContent, PostMetadata};
+
 // Mock types for WASM builds
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

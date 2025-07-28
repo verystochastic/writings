@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use crate::app::{AppState, Route};
+use wasm_bindgen::JsCast;
 
 #[derive(Props)]
 pub struct AdminProps {
@@ -8,7 +9,16 @@ pub struct AdminProps {
 
 impl PartialEq for AdminProps {
     fn eq(&self, other: &Self) -> bool {
-        self.app_state.get().current_route == other.app_state.get().current_route
+        let self_state = self.app_state.get();
+        let other_state = other.app_state.get();
+        
+        // Check if wallet connection status changed
+        let wallet_changed = self_state.wallet_service.connected != other_state.wallet_service.connected;
+        let admin_status_changed = self_state.is_admin() != other_state.is_admin();
+        
+        // Re-render if wallet status or admin status changed
+        !wallet_changed && !admin_status_changed && 
+        self_state.current_route == other_state.current_route
     }
 }
 
@@ -19,6 +29,31 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
     let is_logged_in = cx.props.app_state.get().is_admin();
     let wallet_connected = cx.props.app_state.get().wallet_service.connected;
     let connected_wallet = cx.props.app_state.get().wallet_service.public_key.clone();
+
+    // Blog posts state - now mutable
+    let blog_posts = use_state(cx, || vec![
+        BlogPost {
+            id: "1".to_string(),
+            title: "Welcome to My Solana Blog".to_string(),
+            description: "My first post on the decentralized web".to_string(),
+            created_at: "2024-01-20".to_string(),
+            status: PostStatus::Published,
+            arweave_tx: "abc123...".to_string(),
+        },
+        BlogPost {
+            id: "2".to_string(),
+            title: "Building with Rust and Dioxus".to_string(),
+            description: "How I built this blog using Rust".to_string(),
+            created_at: "2024-01-15".to_string(),
+            status: PostStatus::Draft,
+            arweave_tx: "".to_string(),
+        },
+    ]);
+
+    // Arweave wallet configuration
+    let arweave_service = crate::services::ArweaveService::new();
+    let arweave_wallet_configured = arweave_service.get_arweave_key().is_some();
+    let arweave_address = arweave_service.get_arweave_address();
 
     let handle_connect_wallet = {
         let app_state = cx.props.app_state.clone();
@@ -72,15 +107,6 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
         }
     };
 
-    let handle_edit_about = {
-        let app_state = cx.props.app_state.clone();
-        move |_| {
-            let mut new_state = app_state.get().clone();
-            new_state.current_route = Route::About; // For now, redirect to About page
-            app_state.set(new_state);
-        }
-    };
-
     let handle_create_post = {
         let app_state = cx.props.app_state.clone();
         move |_| {
@@ -98,6 +124,53 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
             app_state.set(new_state);
         }
     };
+
+    // Arweave wallet configuration handlers
+    let handle_configure_arweave = {
+        let arweave_service = arweave_service.clone();
+        let success_msg = success_msg.clone();
+        let error_msg = error_msg.clone();
+        
+        move |key: String| {
+            if key.is_empty() {
+                error_msg.set(Some("Please enter your Arweave wallet key".to_string()));
+                return;
+            }
+            
+            match arweave_service.store_arweave_key(&key) {
+                Ok(_) => {
+                    success_msg.set(Some("Arweave wallet configured successfully!".to_string()));
+                    #[cfg(target_arch = "wasm32")]
+                    web_sys::console::log_1(&"✅ Arweave wallet stored securely".into());
+                }
+                Err(err) => {
+                    error_msg.set(Some(format!("Failed to store Arweave wallet: {}", err)));
+                }
+            }
+        }
+    };
+
+    let handle_clear_arweave = {
+        let arweave_service = arweave_service.clone();
+        let success_msg = success_msg.clone();
+        
+        move |_| {
+            match arweave_service.clear_arweave_key() {
+                Ok(_) => {
+                    success_msg.set(Some("Arweave wallet cleared successfully".to_string()));
+                }
+                Err(err) => {
+                    error_msg.set(Some(format!("Failed to clear Arweave wallet: {}", err)));
+                }
+            }
+        }
+    };
+
+    // Debug logging
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::console::log_1(&format!("Admin: wallet_connected={}, is_logged_in={}", wallet_connected, is_logged_in).into());
+    }
 
     // If wallet is connected and user is admin, show admin panel
     if wallet_connected && is_logged_in {
@@ -134,7 +207,7 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
                 
                 // Admin panel content
                 main {
-                    class: "max-w-4xl mx-auto px-4 py-8",
+                    class: "max-w-6xl mx-auto px-4 py-8",
                     
                     div {
                         class: "space-y-8",
@@ -148,7 +221,7 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
                             }
                             p {
                                 class: "text-gray-400 text-lg",
-                                "Welcome to the admin panel. Manage your blog content and settings."
+                                "Manage your decentralized blog content and settings."
                             }
                         }
                         
@@ -161,51 +234,267 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
                                 }
                             }
                         }
-                        
-                        // Admin actions
-                        div {
-                            class: "grid md:grid-cols-2 gap-6",
-                            
-                            // Content management
-                            div {
-                                class: "border border-gray-700 p-6",
-                                h2 {
-                                    class: "text-xl font-bold mb-4 text-white",
-                                    "CONTENT MANAGEMENT"
-                                }
+
+                        // Error message
+                        if let Some(error) = error_msg.get() {
+                            rsx! {
                                 div {
-                                    class: "space-y-4",
-                                    button {
-                                        class: "w-full border border-gray-600 text-white py-3 text-sm hover:bg-gray-800 transition-colors",
-                                        onclick: handle_create_post,
-                                        "📝 CREATE NEW POST"
+                                    class: "border border-red-800 bg-red-900/20 text-red-400 p-4 text-sm rounded",
+                                    "❌ {error}"
+                                }
+                            }
+                        }
+                        
+                        // Blog Stats
+                        div {
+                            class: "grid md:grid-cols-4 gap-4",
+                            div {
+                                class: "border border-gray-700 p-4",
+                                div { class: "text-gray-400 text-sm", "Total Posts" }
+                                div { class: "text-2xl font-bold text-white", "{blog_posts.get().len()}" }
+                            }
+                            div {
+                                class: "border border-gray-700 p-4",
+                                div { class: "text-gray-400 text-sm", "Published" }
+                                div { class: "text-2xl font-bold text-green-400", "{blog_posts.get().iter().filter(|p| p.status == PostStatus::Published).count()}" }
+                            }
+                            div {
+                                class: "border border-gray-700 p-4",
+                                div { class: "text-gray-400 text-sm", "Drafts" }
+                                div { class: "text-2xl font-bold text-yellow-400", "{blog_posts.get().iter().filter(|p| p.status == PostStatus::Draft).count()}" }
+                            }
+                            div {
+                                class: "border border-gray-700 p-4",
+                                div { class: "text-gray-400 text-sm", "Last Published" }
+                                div { class: "text-sm text-white", "2024-01-20" }
+                            }
+                        }
+                        
+                        // Quick Actions
+                        div {
+                            class: "border border-gray-700 p-6",
+                            h2 {
+                                class: "text-xl font-bold mb-4 text-white",
+                                "QUICK ACTIONS"
+                            }
+                            div {
+                                class: "flex flex-wrap gap-4",
+                                button {
+                                    class: "border border-gray-600 text-white px-6 py-3 text-sm hover:bg-gray-800 transition-colors flex items-center space-x-2",
+                                    onclick: handle_create_post,
+                                    span { "📝" }
+                                    span { "Create New Post" }
+                                }
+                                button {
+                                    class: "border border-gray-600 text-gray-400 px-6 py-3 text-sm hover:bg-gray-800 transition-colors flex items-center space-x-2",
+                                    disabled: true,
+                                    span { "📁" }
+                                    span { "Upload Markdown" }
+                                }
+                                button {
+                                    class: "border border-gray-600 text-gray-400 px-6 py-3 text-sm hover:bg-gray-800 transition-colors flex items-center space-x-2",
+                                    disabled: true,
+                                    span { "⚙️" }
+                                    span { "Blog Settings" }
+                                }
+                            }
+                        }
+
+                        // Arweave Wallet Configuration
+                        div {
+                            class: "border border-gray-700 p-6",
+                            h2 {
+                                class: "text-xl font-bold mb-4 text-white",
+                                "ARWEAVE WALLET CONFIGURATION"
+                            }
+                            
+                            if arweave_wallet_configured {
+                                rsx! {
+                                    div {
+                                        class: "space-y-4",
+                                        div {
+                                            class: "flex items-center space-x-3 p-4 bg-green-900/20 border border-green-700 rounded",
+                                            span { class: "text-green-400", "✅" }
+                                            div {
+                                                class: "flex-1",
+                                                div { class: "text-green-400 font-medium", "Arweave Wallet Configured" }
+                                                if let Some(address) = arweave_address {
+                                                    rsx! {
+                                                        div { class: "text-sm text-gray-400", "Address: {crate::utils::truncate_pubkey(&address)}" }
+                                                    }
+                                                }
+                                            }
+                                            button {
+                                                class: "text-red-400 hover:text-red-300 text-sm",
+                                                onclick: handle_clear_arweave,
+                                                "Clear"
+                                            }
+                                        }
+                                        div {
+                                            class: "text-xs text-gray-500",
+                                            "Your Arweave wallet is configured and ready for publishing posts."
+                                        }
                                     }
-                                    button {
-                                        class: "w-full border border-gray-600 text-gray-400 py-3 text-sm hover:bg-gray-800 transition-colors",
-                                        onclick: handle_edit_about,
-                                        "✏️ EDIT ABOUT PAGE"
+                                }
+                            } else {
+                                rsx! {
+                                    div {
+                                        class: "space-y-4",
+                                        div {
+                                            class: "p-4 bg-yellow-900/20 border border-yellow-700 rounded",
+                                            div { class: "text-yellow-400 font-medium mb-2", "⚠️ Arweave Wallet Not Configured" }
+                                            div { class: "text-sm text-gray-400 mb-4", "You need to configure your Arweave wallet to publish posts." }
+                                            
+                                            // Secure key input (for demo purposes - in production, use proper key management)
+                                            div {
+                                                class: "space-y-2",
+                                                label {
+                                                    class: "block text-sm font-medium text-gray-300",
+                                                    "Arweave Wallet Key (Base64)"
+                                                }
+                                                input {
+                                                    class: "w-full bg-gray-900 border border-gray-700 text-white px-4 py-2 text-sm focus:border-blue-500 focus:outline-none",
+                                                    placeholder: "Enter your Arweave wallet key...",
+                                                    id: "arweave-key-input"
+                                                }
+                                                button {
+                                                    class: "border border-blue-600 text-blue-400 px-4 py-2 text-sm hover:bg-blue-900/20 transition-colors",
+                                                    onclick: move |_| {
+                                                        if let Some(input) = web_sys::window()
+                                                            .and_then(|w| w.document())
+                                                            .and_then(|d| d.get_element_by_id("arweave-key-input"))
+                                                            .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok())
+                                                            .map(|e| e.value()) {
+                                                            handle_configure_arweave(input);
+                                                        }
+                                                    },
+                                                    "Configure Wallet"
+                                                }
+                                            }
+                                        }
+                                        div {
+                                            class: "text-xs text-gray-500",
+                                            "⚠️ Store your Arweave wallet key securely. This is stored locally in your browser."
+                                        }
                                     }
                                 }
                             }
-                            
-                            // Blog settings
+                        }
+                        
+                        // Blog Posts List
+                        div {
+                            class: "border border-gray-700 p-6",
+                            h2 {
+                                class: "text-xl font-bold mb-4 text-white",
+                                "BLOG POSTS"
+                            }
                             div {
-                                class: "border border-gray-700 p-6",
-                                h2 {
-                                    class: "text-xl font-bold mb-4 text-white",
-                                    "BLOG SETTINGS"
-                                }
-                                div {
-                                    class: "space-y-4",
-                                    button {
-                                        class: "w-full border border-gray-600 text-gray-400 py-3 text-sm hover:bg-gray-800 transition-colors",
-                                        disabled: true,
-                                        "⚙️ BLOG CONFIGURATION"
-                                    }
-                                    button {
-                                        class: "w-full border border-gray-600 text-gray-400 py-3 text-sm hover:bg-gray-800 transition-colors",
-                                        disabled: true,
-                                        "📊 ANALYTICS"
+                                class: "space-y-4",
+                                for post in blog_posts.get().iter() {
+                                    rsx! {
+                                        div {
+                                            class: "border border-gray-700 p-4 hover:bg-gray-900/50 transition-colors",
+                                            div {
+                                                class: "flex items-center justify-between",
+                                                div {
+                                                    class: "flex-1",
+                                                    div {
+                                                        class: "flex items-center space-x-3 mb-2",
+                                                        if post.status == PostStatus::Published {
+                                                            rsx! { span { class: "text-green-400 text-sm", "✅" } }
+                                                        } else {
+                                                            rsx! { span { class: "text-yellow-400 text-sm", "⏳" } }
+                                                        }
+                                                        span { class: "text-gray-400 text-sm", "{post.created_at}" }
+                                                        span { class: "text-white font-medium", "{post.title}" }
+                                                    }
+                                                    p {
+                                                        class: "text-gray-400 text-sm",
+                                                        "{post.description}"
+                                                    }
+                                                    if post.status == PostStatus::Published {
+                                                        rsx! {
+                                                            p {
+                                                                class: "text-xs text-gray-500 font-mono",
+                                                                "Arweave: {crate::utils::truncate_pubkey(&post.arweave_tx)}"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                div {
+                                                    class: "flex space-x-2",
+                                                    if post.status == PostStatus::Draft {
+                                                        rsx! {
+                                                            button {
+                                                                class: "border border-green-600 text-green-400 px-3 py-1 text-xs hover:bg-green-900/20 transition-colors",
+                                                                onclick: {
+                                                                    let blog_posts = blog_posts.clone();
+                                                                    let success_msg = success_msg.clone();
+                                                                    let post_id = post.id.clone();
+                                                                    move |_| {
+                                                                        let mut posts = blog_posts.get().clone();
+                                                                        if let Some(post) = posts.iter_mut().find(|p| p.id == post_id) {
+                                                                            post.status = PostStatus::Published;
+                                                                            blog_posts.set(posts);
+                                                                            success_msg.set(Some("Post published successfully!".to_string()));
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "Publish"
+                                                            }
+                                                        }
+                                                    } else {
+                                                        rsx! {
+                                                            button {
+                                                                class: "border border-gray-600 text-gray-400 px-3 py-1 text-xs hover:bg-gray-800 transition-colors",
+                                                                onclick: {
+                                                                    let blog_posts = blog_posts.clone();
+                                                                    let success_msg = success_msg.clone();
+                                                                    let post_id = post.id.clone();
+                                                                    move |_| {
+                                                                        let mut posts = blog_posts.get().clone();
+                                                                        if let Some(post) = posts.iter_mut().find(|p| p.id == post_id) {
+                                                                            post.status = PostStatus::Draft;
+                                                                            blog_posts.set(posts);
+                                                                            success_msg.set(Some("Post hidden successfully!".to_string()));
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "Hide"
+                                                            }
+                                                        }
+                                                    }
+                                                    button {
+                                                        class: "border border-gray-600 text-gray-400 px-3 py-1 text-xs hover:bg-gray-800 transition-colors",
+                                                        onclick: {
+                                                            let app_state = cx.props.app_state.clone();
+                                                            let post_id = post.id.clone();
+                                                            move |_| {
+                                                                let mut new_state = app_state.get().clone();
+                                                                new_state.current_route = Route::CreatePost(crate::config::DEMO_BLOG_PUBKEY.to_string());
+                                                                app_state.set(new_state);
+                                                            }
+                                                        },
+                                                        "Edit"
+                                                    }
+                                                    button {
+                                                        class: "border border-red-600 text-red-400 px-3 py-1 text-xs hover:bg-red-900/20 transition-colors",
+                                                        onclick: {
+                                                            let blog_posts = blog_posts.clone();
+                                                            let success_msg = success_msg.clone();
+                                                            let post_id = post.id.clone();
+                                                            move |_| {
+                                                                let mut posts = blog_posts.get().clone();
+                                                                posts.retain(|p| p.id != post_id);
+                                                                blog_posts.set(posts);
+                                                                success_msg.set(Some("Post deleted successfully!".to_string()));
+                                                            }
+                                                        },
+                                                        "Delete"
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -216,7 +505,7 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
                             class: "border border-gray-700 p-6",
                             h2 {
                                 class: "text-xl font-bold mb-4 text-white",
-                                "STATUS"
+                                "SYSTEM STATUS"
                             }
                             div {
                                 class: "grid grid-cols-1 md:grid-cols-3 gap-4 text-sm",
@@ -232,8 +521,12 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
                                 }
                                 div {
                                     class: "p-3 bg-gray-900 border border-gray-700",
-                                    div { class: "text-gray-400", "Network" }
-                                    div { class: "text-blue-400 font-mono", "🌐 Devnet" }
+                                    div { class: "text-gray-400", "Arweave Wallet" }
+                                    if arweave_wallet_configured {
+                                        rsx! { div { class: "text-green-400 font-mono", "✅ Configured" } }
+                                    } else {
+                                        rsx! { div { class: "text-yellow-400 font-mono", "⚠️ Not Configured" } }
+                                    }
                                 }
                             }
                         }
@@ -350,4 +643,21 @@ pub fn Admin(cx: Scope<AdminProps>) -> Element {
             }
         })
     }
+}
+
+// Blog post data structure
+#[derive(Clone, PartialEq)]
+struct BlogPost {
+    id: String,
+    title: String,
+    description: String,
+    created_at: String,
+    status: PostStatus,
+    arweave_tx: String,
+}
+
+#[derive(Clone, PartialEq)]
+enum PostStatus {
+    Published,
+    Draft,
 } 
