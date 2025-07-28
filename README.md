@@ -225,4 +225,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ using Rust, Solana, and Arweave** 
+**Built with ❤️ using Rust, Solana, and Arweave** # Trigger deployment
