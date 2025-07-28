@@ -1,0 +1,12 @@
+[application]
+name = "solana-blog-frontend"
+default_platform = "web"
+
+[web.app]
+title = "verystochastic - solana blog"
+base_path = "/writings/"
+
+[web.watcher]
+watch_path = ["src", "assets"]
+reload_html = true
+index_on_404 = true 

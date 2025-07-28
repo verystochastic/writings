@@ -1,0 +1,62 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: wasm32-unknown-unknown
+        override: true
+    
+    - name: Install Dioxus CLI
+      run: cargo install dioxus-cli
+    
+    - name: Build
+      run: |
+        cd frontend
+        dx build --platform web --release
+    
+    - name: Create 404.html for SPA routing
+      run: |
+        cd frontend/dist
+        cat > 404.html << 'EOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>verystochastic - solana blog</title>
+            <script>
+                // Redirect to main app with hash routing
+                const path = window.location.pathname;
+                const search = window.location.search;
+                const hash = window.location.hash;
+                const newPath = '/writings/' + (hash ? hash : '#/');
+                window.location.replace(newPath);
+            </script>
+        </head>
+        <body>
+            <p>Redirecting...</p>
+        </body>
+        </html>
+        EOF
+    
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      if: github.ref == 'refs/heads/main'
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./frontend/dist
+        cname: # Optional: Add your custom domain here 
