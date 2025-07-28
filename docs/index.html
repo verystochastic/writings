@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>verystochastic - solana blog</title>
+    <title>verystochastic - solana blogverystochastic - solana blog</title>
     <base href="/writings/">
     <!-- Minimal black favicon to prevent 404 errors -->
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23000'/%3E%3C/svg%3E">
@@ -27,64 +27,22 @@
         .text-gray-500 { color: #6b7280; }
         .border-gray-700 { border-color: #374151; }
         .border-gray-800 { border-color: #1f2937; }
-        
-        #loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            flex-direction: column;
-        }
-        
-        #error {
-            display: none;
-            padding: 20px;
-            color: #ef4444;
-        }
     </style>
-</head>
+<link rel="preload" as="script" href="/writings/assets/solana-blog-frontend-6a1b953c72a491b1.js" crossorigin><link rel="preload" as="fetch" type="application/wasm" href="/writings/assets/solana-blog-frontend_bg-7d7c0acbc37fbbf3.wasm" crossorigin></head>
 <body>
-    <div id="loading">
-        <h2>Loading Solana Blog...</h2>
-        <p>Please wait while the application initializes...</p>
-    </div>
-    
-    <div id="error">
-        <h2>Error Loading Application</h2>
-        <p id="error-message"></p>
-        <button onclick="location.reload()">Retry</button>
-    </div>
-    
     <div id="main"></div>
-
 <script>
-    console.log('Starting Dioxus app initialization...');
-    
-    // Show loading state
-    document.getElementById('loading').style.display = 'flex';
-    document.getElementById('error').style.display = 'none';
-    
-    // Import and initialize the app
-    import("/writings/assets/solana-blog-frontend-d3860f0aa52ab7b7.js")
-        .then(({ default: init }) => {
-            console.log('JS module loaded successfully');
-            return init("/writings/assets/solana-blog-frontend_bg-4b267a9ba05c55a9.wasm");
-        })
-        .then((wasm) => {
-            console.log('WASM module loaded successfully');
-            document.getElementById('loading').style.display = 'none';
+            // We can't use a module script here because we need to start the script immediately when streaming
+            import("/writings/assets/solana-blog-frontend-6a1b953c72a491b1.js").then(
+                ({ default: init }) => {
+                init("/writings/assets/solana-blog-frontend_bg-7d7c0acbc37fbbf3.wasm").then((wasm) => {
+                    if (wasm.__wbindgen_start == undefined) {
+                    wasm.main();
+                    }
+                });
+                }
+            );
+            </script>
             
-            if (wasm.__wbindgen_start == undefined) {
-                console.log('Starting main function...');
-                wasm.main();
-            }
-        })
-        .catch((error) => {
-            console.error('Failed to load application:', error);
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('error').style.display = 'block';
-            document.getElementById('error-message').textContent = error.message;
-        });
-</script>
-</body>
+            </body>
 </html> 
